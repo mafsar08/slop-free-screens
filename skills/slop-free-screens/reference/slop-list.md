@@ -129,7 +129,7 @@ Sample data gets replaced later, so not every made-up row is slop. A data sign m
 ## Behaviour
 
 - **B1 · Must · Use** **Controls that do nothing.**
-  **Fix:** wire it up, or mark it "Not built yet".
+  **Fix:** wire it up. If it's out of scope, keep its label unchanged and show "Not built yet" only on the page it opens. Never add the note to a tab, menu item or button.
 - **B2 · Must · Use** **Enter acts on the wrong item**: a part-match search and Enter acts on the first row.
   **Fix:** act only on an exact match, or on a row the user picked.
 - **B3 · Must · Use** **One key press handled twice**, on two screens.
