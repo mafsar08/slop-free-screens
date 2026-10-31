@@ -1,0 +1,437 @@
+<title>Slop Report</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<!--
+HOW TO FILL — slop-free-screens report, marked-up version
+
+Fill only the JSON block in <script id="report-data">. The page draws itself from it. Don't edit the HTML or CSS.
+Steps fill their own keys. A step that wasn't run leaves its "steps" entry "" and the page says so.
+Each step sets its own entry in "steps" (job, rules, pick, cut, rule) to "done" when it finishes.
+  Run start          → screen, date, tool
+  1 Set the job      → for
+  3 Pick and check   → picked
+  4 Cut and break    → verdict, before, after, widgets, left, breaks
+  5 Make it a rule   → rules_added, rules_saved
+
+picked       One line, 15 words or fewer: the direction chosen and why. Fast mode starts "Picked by AI".
+             "Practise-first layout · chosen over table-first and chart-first". Empty for an existing screen.
+verdict      One line, 10 words or fewer, the result a stranger should read first. "Cleaner, but it breaks on a phone."
+before/after Full-page screenshots, same width (one browser width for both). Paths relative to this file.
+widgets[]    One per widget on the old screen.
+  status       "kept" or "removed". "" for a page-wide fix (no crop, no pin).
+  box          Where the widget sits on the AFTER image: [x, y, w, h] as fractions of its width and height (0–1).
+               Measure it in the browser (getBoundingClientRect ÷ page size). No browser: leave null.
+  before_crop / after_crop   Crops of the widget. A removed widget has only before_crop.
+  note         Optional, 6 words or fewer ("4 → 3").
+  why          Removed widgets only: why it had no job. 10 words or fewer.
+  fixes[]      found / replaced: 6 words or fewer each. rule: an id from slop-list.md (L3, W1) or team-rules.md.
+left[]       Slop seen but not fixed. what (6 words), rule, note (why it stays, 10 words), image (crop with the spot ringed),
+             box: one box or a list of boxes on the AFTER image, same format as widgets.
+breaks[]     case, result ("holds" | "ugly" | "breaks" | "not tried"), note (6 words), image.
+             A case judged only from code is "not tried", never "holds".
+rules_added  Only rules this run learned. Never list rules the skill already holds.
+rules_saved  true once step 5 wrote them to rules_file. false shows a Copy button.
+rules_created true when step 5 created rules_file because the project had none.
+team_rules   [{id, text}] for any team-rules.md id used in a fix, so its tag can show the text.
+
+With no boxes at all, the pins hide and the notes show as a plain list.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif&display=swap">
+<style>
+:root{
+  --paper:#fbfaf7; --surface:#ffffff; --ink:#151514; --muted:#5d5c58; --line:#e3e1da; --soft:#f1efe9;
+  --red:#c42a20; --amber:#8f5c00; --green:#1c6a42; --focus:#151514;
+  --shadow:0 1px 2px rgba(21,21,20,.06),0 8px 28px rgba(21,21,20,.07);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#121211; --surface:#1b1b19; --ink:#f1f0ea; --muted:#a6a49c; --line:#2f2e2b; --soft:#22221f;
+  --red:#ff6a5c; --amber:#f0b440; --green:#62d29a; --focus:#f1f0ea;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 28px rgba(0,0,0,.35); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#121211; --surface:#1b1b19; --ink:#f1f0ea; --muted:#a6a49c; --line:#2f2e2b; --soft:#22221f;
+  --red:#ff6a5c; --amber:#f0b440; --green:#62d29a; --focus:#f1f0ea;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 28px rgba(0,0,0,.35); color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.5 Geist,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:left}
+button:disabled{cursor:default}
+:focus-visible{outline:2px solid var(--focus);outline-offset:3px;border-radius:4px}
+img{max-width:100%;display:block}
+.mono{font-family:"Geist Mono",ui-monospace,Menlo,monospace}
+.wrap{max-width:1240px;margin:0 auto;padding-block:28px 72px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+/* header */
+.top{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.eyebrow{font-size:12.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:2px;gap:2px;background:var(--surface)}
+.seg button{font-size:13px;padding:5px 12px;border-radius:999px;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.verdict{font-family:"Instrument Serif",Georgia,"Times New Roman",serif;font-weight:400;font-size:clamp(40px,6vw,68px);line-height:1.02;letter-spacing:-.01em;margin:22px 0 18px;text-wrap:balance;max-width:20ch}
+.counts{display:flex;flex-wrap:wrap;gap:8px}
+.count{display:inline-flex;align-items:baseline;gap:8px;padding:9px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.count b{font-size:22px;font-weight:600;line-height:1}
+.count span{font-size:14px;color:var(--muted)}
+.count[aria-pressed="true"]{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.count .mk{font-size:17px}
+.for{margin:16px 0 0;color:var(--muted);font-size:15.5px}
+.for b{color:var(--ink);font-weight:500}
+
+/* marks */
+.mk{font-family:"Geist Mono",ui-monospace,monospace;font-weight:500;display:inline-flex;align-items:center;justify-content:center;line-height:1}
+.ok{color:var(--green)} .bad{color:var(--red)} .ug{color:var(--amber)}
+.ringmk{width:20px;height:14px;display:inline-block;vertical-align:-1px}
+.ringmk svg{width:100%;height:100%;overflow:visible;display:block}
+.ringmk path{fill:none;stroke:var(--red);stroke-width:2.2;stroke-linecap:round}
+
+/* sections */
+section{margin-top:56px}
+.sh{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 14px;border-top:1px solid var(--ink);padding-top:10px}
+.sh h2{margin:0;font:500 13px/1.3 "Geist Mono",ui-monospace,monospace;letter-spacing:.08em;text-transform:uppercase}
+.sh .aside{font-size:14px;color:var(--muted)}
+
+/* compare */
+.frame{position:relative;max-height:min(76vh,760px);overflow-y:auto;overflow-x:hidden;background:var(--surface);border-radius:12px;box-shadow:var(--shadow);overscroll-behavior:contain}
+.side{display:grid;grid-template-columns:1fr 1fr;gap:2px;background:var(--line)}
+.side figure{margin:0;background:var(--surface);min-width:0}
+.side figcaption,.lab{font:500 12px/1 "Geist Mono",ui-monospace,monospace;letter-spacing:.06em;text-transform:uppercase;padding:9px 12px;color:var(--muted);background:var(--surface);position:sticky;top:0;z-index:2;border-bottom:1px solid var(--line)}
+.stack{position:relative;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.stack .a{position:absolute;top:0;left:0;width:100%}
+.stack .labs{position:sticky;top:0;z-index:3;height:0}
+.stack .labs .lab{position:absolute;top:0;border-bottom:0;border-radius:0 0 8px 0;background:color-mix(in srgb,var(--surface) 90%,transparent)}
+.stack .labs .lab+.lab{right:0;border-radius:0 0 0 8px}
+.handle{position:absolute;top:0;bottom:0;width:0;border-left:2px solid var(--ink);z-index:2;cursor:ew-resize}
+.handle::after{content:"⇆";position:sticky;top:44%;display:flex;align-items:center;justify-content:center;width:36px;height:36px;margin-left:-19px;border-radius:50%;background:var(--ink);color:var(--paper);font-size:16px}
+.fade{display:flex;align-items:center;gap:12px;margin-top:12px;font-size:14px;color:var(--muted)}
+.fade input{flex:1;max-width:360px;accent-color:var(--ink)}
+
+/* marked screen */
+.marked{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:36px;align-items:start;position:relative}
+.screenwrap{position:sticky;top:16px}
+.screen{position:relative;background:var(--surface);border-radius:12px;box-shadow:var(--shadow);overflow:hidden}
+.screen img{width:100%;cursor:zoom-in}
+.ob{position:absolute;border:2px dashed #151514;border-radius:8px;opacity:0;transition:opacity .15s;pointer-events:none}
+.ob.on{opacity:.9}
+.ring{position:absolute;overflow:visible;pointer-events:none}
+.ring path{fill:none;stroke:#cf281d;stroke-width:3;stroke-linecap:round;vector-effect:non-scaling-stroke}
+.pin{position:absolute;width:28px;height:28px;border-radius:50%;background:#151514;color:#fff;font:600 13px/28px "Geist Mono",ui-monospace,monospace;text-align:center;box-shadow:0 0 0 3px #fff;z-index:2;transition:transform .15s,opacity .15s;transform:translate(-80%,-80%)}
+.pin.still{background:#fff;color:#cf281d;box-shadow:0 0 0 2px #cf281d,0 0 0 5px #fff;transform:translate(-15%,-85%)}
+.pin.on{transform:translate(-80%,-80%) scale(1.25)}
+.pin.still.on{transform:translate(-15%,-85%) scale(1.25)}
+.dim{opacity:.18}
+.leader{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:4}
+.leader line{stroke:var(--ink);stroke-width:1.5;stroke-dasharray:3 4}
+
+.notes{list-style:none;margin:0;padding:0;display:grid;gap:0}
+.group{font:500 12px/1 "Geist Mono",ui-monospace,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:22px 0 8px}
+.note{border-top:1px solid var(--line);padding:14px 0 14px;scroll-margin-top:24px}
+.note.on{background:linear-gradient(90deg,var(--soft),transparent)}
+.nhead{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:10px;align-items:center;width:100%}
+.num{width:26px;height:26px;border-radius:50%;background:var(--ink);color:var(--paper);font:600 12.5px/26px "Geist Mono",ui-monospace,monospace;text-align:center}
+.num.still{background:none;color:var(--red);box-shadow:inset 0 0 0 2px var(--red)}
+.num.none{background:none;color:var(--muted);box-shadow:inset 0 0 0 1px var(--line)}
+.nname{font-weight:600;font-size:17px;min-width:0}
+.nname small{font-weight:400;color:var(--muted);font-size:14px;margin-left:6px}
+.caret{font-size:13px;color:var(--muted);transition:transform .15s}
+.nhead[aria-expanded="true"] .caret{transform:rotate(90deg)}
+.fx{list-style:none;margin:6px 0 0 40px;padding:0;display:grid;gap:4px;font-size:15.5px}
+.fx li{min-width:0}
+.fx .was{color:var(--muted)}
+.fx .arrow{color:var(--muted);margin:0 6px}
+.rule{font:500 12.5px/1 "Geist Mono",ui-monospace,monospace;padding:3px 6px;margin-left:8px;border:1px solid var(--line);border-radius:5px;color:var(--ink);vertical-align:1px}
+.rule[aria-expanded="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.ruletext{margin:8px 0 0 40px;font-size:14.5px;padding:8px 12px;background:var(--soft);border-radius:8px}
+.why{margin:6px 0 0 40px;font-size:15.5px;color:var(--muted)}
+.pair{margin:12px 0 0 40px;display:grid;grid-template-columns:minmax(0,1fr) 24px minmax(0,1fr);gap:8px;align-items:start}
+.pair .ar{align-self:center;text-align:center;color:var(--muted)}
+.shot{display:block;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden;cursor:zoom-in;padding:0}
+.shot img{width:100%;max-height:240px;object-fit:contain;object-position:left top;background:var(--surface)}
+.single{margin:12px 0 0 40px}
+.struck{position:relative;display:block;width:100%;margin:10px 0 0;padding:0;cursor:zoom-in;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)}
+.struck img{width:100%;max-height:120px;object-fit:cover;object-position:left top;opacity:.55;filter:grayscale(1)}
+.struck::after{content:"";position:absolute;left:3%;right:3%;top:50%;border-top:3px solid var(--red);transform:rotate(-3deg)}
+.rm{margin-left:40px}
+.plain .nhead{grid-template-columns:0 minmax(0,1fr) auto}
+.plain .num{display:none}
+
+/* breaks */
+.brk{list-style:none;margin:0;padding:0}
+.brow{display:grid;grid-template-columns:40px minmax(0,13em) minmax(0,1fr) 84px;gap:14px;align-items:center;width:100%;padding:10px 0;border-top:1px solid var(--line)}
+.brow .case{font-weight:600}
+.brow .bn{color:var(--muted);font-size:15.5px}
+.brow img{width:84px;height:56px;object-fit:cover;object-position:left top;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
+.brow .mk{font-size:20px;position:relative;width:34px;height:26px}
+.brow .mk svg{position:absolute;inset:-4px -2px;width:calc(100% + 4px);height:calc(100% + 8px);overflow:visible}
+.brow .mk svg path{fill:none;stroke:var(--red);stroke-width:2;stroke-linecap:round}
+.nottried{margin:10px 0 0;padding-top:10px;border-top:1px solid var(--line);color:var(--muted);font-size:15px}
+
+/* rules */
+.rules{list-style:none;margin:0;padding:0;display:grid;gap:10px;font-size:17px}
+.rules li{display:grid;grid-template-columns:28px minmax(0,1fr);gap:8px}
+.save{margin-top:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-size:15px;color:var(--muted)}
+.btn{padding:9px 16px;border-radius:9px;background:var(--ink);color:var(--paper);font-weight:500;font-size:15px}
+footer{margin-top:64px;font-size:13px;color:var(--muted)}
+
+/* zoom */
+.zoom{position:fixed;inset:0;z-index:30;background:rgba(10,10,10,.88);overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:24px max(16px,env(safe-area-inset-right,0px)) 24px max(16px,env(safe-area-inset-left,0px));cursor:zoom-out}
+.zoom img{max-width:min(1440px,100%);height:auto;border-radius:8px;background:#fff}
+
+@media (max-width:900px){
+  .marked{grid-template-columns:minmax(0,1fr);gap:20px}
+  .screenwrap{position:static}
+  .leader{display:none}
+}
+@media (max-width:560px){
+  body{font-size:16px}
+  .brow{grid-template-columns:34px minmax(0,1fr) 64px;row-gap:2px}
+  .brow .case{grid-column:2}
+  .brow .bn{grid-column:2;grid-row:2;font-size:14.5px}
+  .brow img{grid-column:3;grid-row:1/span 2;width:64px;height:48px}
+  .pair{grid-template-columns:minmax(0,1fr);margin-left:0}
+  .pair .ar{transform:rotate(90deg)}
+  .fx,.why,.ruletext,.single,.rm{margin-left:0}
+  .count{padding:8px 11px}
+  .count b{font-size:19px}
+  .pin{width:24px;height:24px;line-height:24px;font-size:11.5px}
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="top">
+      <div class="eyebrow mono" id="eyebrow"></div>
+      <div class="seg" id="theme" aria-label="Theme"><button data-t="light" aria-pressed="true">Light</button><button data-t="dark" aria-pressed="false">Dark</button></div>
+    </div>
+    <h1 class="verdict" id="verdict"></h1>
+    <div class="counts" id="counts"></div>
+    <p class="for" id="for"></p>
+  </header>
+
+  <section id="s-compare">
+    <div class="sh"><h2>Before · After</h2>
+      <div class="seg" id="mode" aria-label="Compare"><button data-m="side" aria-pressed="true">Side by side</button><button data-m="swipe" aria-pressed="false">Swipe</button><button data-m="fade" aria-pressed="false">Fade</button></div>
+    </div>
+    <div class="frame" id="frame">
+      <div class="side" id="side"><figure><figcaption>Before</figcaption><img id="b1" alt="Before"></figure><figure><figcaption>After</figcaption><img id="a1" alt="After"></figure></div>
+      <div class="stack" id="stack" hidden>
+        <div class="labs"><span class="lab">Before</span><span class="lab">After</span></div>
+        <img id="b2" alt="Before"><div class="a" id="aw"><img id="a2" alt="After"></div>
+        <div class="handle" id="handle" role="slider" tabindex="0" aria-label="Swipe between before and after" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"></div>
+      </div>
+    </div>
+    <label class="fade" id="fadebar" hidden>Before <input type="range" id="fade" min="0" max="100" value="50" aria-label="Fade between before and after"> After</label>
+  </section>
+
+  <section id="s-marked">
+    <div class="sh"><h2>What changed</h2><span class="aside" id="markedAside"></span></div>
+    <div class="marked" id="marked">
+      <div class="screenwrap" id="screenwrap"><div class="screen" id="screen"><img id="a3" alt="After, marked"></div></div>
+      <ol class="notes" id="notes"></ol>
+      <svg class="leader" id="leader" aria-hidden="true"><line id="lline" x1="0" y1="0" x2="0" y2="0" hidden/></svg>
+    </div>
+  </section>
+
+  <section id="s-breaks">
+    <div class="sh"><h2>Try to break it</h2><span class="aside" id="brkAside"></span></div>
+    <ul class="brk" id="brk"></ul>
+    <p class="nottried" id="nottried" hidden></p>
+  </section>
+
+  <section id="s-rules">
+    <div class="sh"><h2>New rules</h2><span class="aside" id="rulesAside"></span></div>
+    <ul class="rules" id="rules"></ul>
+    <div class="save" id="save"></div>
+  </section>
+
+  <footer class="mono">slop-free-screens · rule ids from slop-list.md and team-rules.md</footer>
+</div>
+<div class="zoom" id="zoom" hidden><img alt=""></div>
+
+<script type="application/json" id="report-data">
+{"screen":"","date":"","tool":"","for":"","steps":{"job":"","rules":"","pick":"","cut":"","rule":""},"picked":"","verdict":"","before":{"image":""},"after":{"image":""},"widgets":[],"left":[],"breaks":[],"rules_added":[],"rules_file":"team-rules.md","rules_saved":false,"team_rules":[]}
+</script>
+<script>
+(()=>{
+const D=JSON.parse(document.getElementById('report-data').textContent||'{}');
+const NAMES=/*SLOP-IDS*/{"L1": "Decoration colour", "L2": "One colour, two meanings", "L3": "A colour per item", "L4": "Gradients, glows, glass or blur", "L5": "The default AI look", "L6": "Everything in a box", "L7": "Flat type", "L8": "Random spacing", "L9": "One part drawn many ways", "L10": "The frame changes between screens", "L11": "Bare rows, or emoji as icons", "L12": "A pill on every row", "L13": "AI marks everywhere", "L14": "Ornaments instead of numbers", "L15": "Text too small for where it's read", "L16": "Low contrast", "L17": "Short values wrap or break mid-word", "L18": "Things overlap or get cut off", "L19": "Big empty areas", "L20": "Widgets shrink and leave holes", "W1": "A subtitle that repeats the heading", "W2": "Helper lines under controls", "W3": "The AI's own notes left on screen", "W4": "Instructions inside an empty state", "W5": "Keyboard-hint strips, key labels (↵, Esc, 1 2 3) and legends", "W6": "System words on buttons", "W7": "Template leftovers", "W8": "The same fact twice or more", "W9": "\"Updated by…\" sentences, or the same label on every row", "W10": "Sentences where a number would do", "W11": "A generic heading that fits any product", "W12": "Copy that promises what the app doesn't do", "W13": "The header names the wrong task", "D1": "Numbers nobody acts on", "D2": "Comparisons with other people, or made-up targets", "D3": "Numbers that don't add up", "D4": "Numbers typed in rather than worked out", "D5": "A change or average with nothing to compare", "D6": "A missing value filled with a made-up one", "D7": "Colour by direction rather than meaning", "D8": "A chart that compares nothing", "D9": "Counts typed into links", "D10": "Dates that don't fit the moment", "D11": "The wrong local formats", "D12": "Sample data that's too neat", "D13": "The default AI sample people", "D14": "A number dropped or swapped without saying so", "B1": "Controls that do nothing", "B2": "Enter acts on the wrong item", "B3": "One key press handled twice", "B4": "Letter shortcuts on a screen where people type", "B5": "The selection jumps after an action", "B6": "Two different states look the same", "B7": "No undo, or an undo that leaves a junk row", "B8": "Happy path only", "B9": "An empty state that pretends there's data", "B10": "The main action is buried", "B11": "The most urgent items aren't first", "B12": "One screen serving several roles", "B13": "The right-looking pattern for the wrong job", "B14": "A choice doesn't carry to the next screen", "B15": "Undoing a choice doesn't reset what depends on it", "B16": "Lists only fit the amount drawn", "B17": "Sideways scroll at phone width", "B18": "No visible focus, or parts you can't reach by keyboard", "B19": "Widgets deleted to \"remove slop\"", "B20": "The AI says it checked something it didn't", "B21": "A script error when the page loads"}/*END*/;
+const TEAM=Object.fromEntries((D.team_rules||[]).map(r=>[r.id,r.text]));
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const RING='M9,54 C6,24 50,7 103,7 C160,8 195,27 193,53 C191,80 150,95 99,94 C45,93 7,80 8,51 C9,31 36,16 72,11';
+const ringSvg=(cls='')=>`<svg class="${cls}" viewBox="0 0 200 100" preserveAspectRatio="none" aria-hidden="true"><path d="${RING}"/></svg>`;
+const boxes=b=>!b?[]:(Array.isArray(b[0])?b:[b]);
+const ruleBtn=id=>id?`<button class="rule" data-rule="${esc(id)}" aria-expanded="false" title="${esc(TEAM[id]||NAMES[id]||'')}">${esc(id)}</button>`:'';
+
+/* theme */
+const root=document.documentElement;
+const setTheme=t=>{root.setAttribute('data-theme',t);$$('#theme button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.t===t)));try{localStorage.setItem('sfs-theme',t)}catch(e){}};
+let saved='light';try{saved=localStorage.getItem('sfs-theme')||'light'}catch(e){}
+setTheme(saved==='dark'?'dark':'light');
+$$('#theme button').forEach(b=>b.onclick=()=>setTheme(b.dataset.t));
+
+/* header */
+$('#eyebrow').textContent=['Slop report',D.screen,D.date,D.tool].filter(Boolean).join(' · ');
+$('#verdict').textContent=D.verdict||D.screen||'';
+const notRun={job:'Set the job',rules:'Set the rules',pick:'Pick and check',cut:'Cut and break',rule:'Make it a rule'};
+const missing=Object.entries(D.steps||{}).filter(([k,v])=>!v).map(([k])=>notRun[k]).filter(Boolean);
+$('#for').innerHTML=(D.for?`<b>For:</b> ${esc(D.for)}`:'')+(missing.length?`${D.for?' · ':''}Not run: ${esc(missing.join(', '))}`:'')+(D.picked?`<br><b>Picked:</b> ${esc(D.picked)}`:'');
+
+const W=D.widgets||[], kept=W.filter(w=>w.status!=='removed'), removed=W.filter(w=>w.status==='removed'), left=D.left||[];
+const B=(D.breaks||[]).map(b=>({...b,result:(b.result||'').toLowerCase()}));
+const nFix=kept.reduce((n,w)=>n+(w.fixes||[]).length,0);
+const R={breaks:B.filter(b=>b.result==='breaks'),ugly:B.filter(b=>b.result==='ugly'),holds:B.filter(b=>b.result==='holds'),not:B.filter(b=>b.result==='not tried')};
+const counts=[
+  {f:'fixed',n:nFix,l:nFix===1?'fix':'fixes',sec:'s-marked'},
+  {f:'removed',n:removed.length,l:'removed',sec:'s-marked'},
+  {f:'still',n:left.length,l:'still there',mk:`<span class="ringmk">${ringSvg()}</span>`,sec:'s-marked'},
+  {f:'breaks',n:R.breaks.length,l:'breaks',mk:'<span class="mk bad">✕</span>',sec:'s-breaks'},
+  {f:'ugly',n:R.ugly.length,l:'ugly',mk:'<span class="mk ug">⚠&#xFE0E;</span>',sec:'s-breaks'},
+  {f:'holds',n:R.holds.length,l:'hold',mk:'<span class="mk ok">✓</span>',sec:'s-breaks'}
+].filter(c=>c.n||c.f==='fixed');
+$('#counts').innerHTML=counts.map(c=>`<button class="count" data-f="${c.f}" aria-pressed="false">${c.mk||''}<b>${c.n}</b><span>${c.l}</span></button>`).join('');
+
+/* images */
+const zoom=$('#zoom');
+const openZoom=src=>{if(!src)return;zoom.querySelector('img').src=src;zoom.hidden=false;zoom.scrollTop=0};
+zoom.onclick=()=>zoom.hidden=true;
+addEventListener('keydown',e=>{if(e.key==='Escape'&&!zoom.hidden)zoom.hidden=true});
+const bi=(D.before||{}).image, ai=(D.after||{}).image;
+['b1','b2'].forEach(id=>$('#'+id).src=bi||'');['a1','a2','a3'].forEach(id=>$('#'+id).src=ai||'');
+$('#b1').onclick=()=>openZoom(bi);$('#a1').onclick=()=>openZoom(ai);$('#a3').onclick=()=>openZoom(ai);
+$('#b1').style.cursor=$('#a1').style.cursor='zoom-in';
+if(!bi||!ai)$('#s-compare').hidden=true;
+
+/* compare */
+let pos=50;
+const setPos=v=>{pos=Math.max(0,Math.min(100,v));$('#aw').style.clipPath=`inset(0 0 0 ${pos}%)`;$('#handle').style.left=pos+'%';$('#handle').setAttribute('aria-valuenow',String(Math.round(pos)))};
+const setMode=m=>{
+  $$('#mode button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.m===m)));
+  $('#side').hidden=m!=='side';$('#stack').hidden=m==='side';$('#fadebar').hidden=m!=='fade';$('#handle').hidden=m!=='swipe';
+  $$('.stack .lab').forEach(l=>l.hidden=m==='fade');
+  if(m==='swipe'){$('#aw').style.opacity='1';setPos(pos)}
+  if(m==='fade'){$('#aw').style.clipPath='none';$('#aw').style.opacity=String($('#fade').value/100)}
+};
+$$('#mode button').forEach(b=>b.onclick=()=>setMode(b.dataset.m));
+$('#fade').oninput=e=>$('#aw').style.opacity=String(e.target.value/100);
+const stack=$('#stack');let drag=false;
+const fromX=x=>{const r=stack.getBoundingClientRect();setPos((x-r.left)/r.width*100)};
+stack.addEventListener('pointerdown',e=>{if($('#handle').hidden)return;drag=true;stack.setPointerCapture(e.pointerId);fromX(e.clientX)});
+stack.addEventListener('pointermove',e=>{if(drag)fromX(e.clientX)});
+stack.addEventListener('pointerup',()=>drag=false);stack.addEventListener('pointercancel',()=>drag=false);
+$('#handle').addEventListener('keydown',e=>{const s=e.shiftKey?20:5;if(e.key==='ArrowLeft'){setPos(pos-s);e.preventDefault()}if(e.key==='ArrowRight'){setPos(pos+s);e.preventDefault()}if(e.key==='Home'){setPos(0);e.preventDefault()}if(e.key==='End'){setPos(100);e.preventDefault()}});
+setPos(50);setMode('side');
+
+/* marked screen + notes */
+const hasBox=[...kept,...left].some(i=>i.box);
+const items=[];
+kept.filter(w=>w.box).sort((a,b)=>boxes(a.box)[0][1]-boxes(b.box)[0][1]).forEach(w=>items.push({kind:'fixed',w}));
+kept.filter(w=>!w.box).forEach(w=>items.push({kind:'fixed',w,page:true}));
+left.slice().sort((a,b)=>(boxes(a.box)[0]||[0,9])[1]-(boxes(b.box)[0]||[0,9])[1]).forEach(l=>items.push({kind:'still',l}));
+let n=0;items.forEach(it=>{const b=it.w?it.w.box:it.l.box;it.n=(hasBox&&b)?++n:null});
+const screen=$('#screen'),notes=$('#notes');
+if(!hasBox){$('#screenwrap').hidden=true;$('#marked').style.gridTemplateColumns='minmax(0,1fr)';notes.classList.add('plain')}
+const fixLines=fx=>(fx||[]).length?`<ul class="fx">${fx.map(f=>`<li><span class="was">${esc(f.found)}</span><span class="arrow">→</span>${esc(f.replaced)}${ruleBtn(f.rule)}</li>`).join('')}</ul>`:'';
+const shot=src=>src?`<button class="shot" data-src="${esc(src)}" aria-label="Enlarge"><img loading="lazy" src="${esc(src)}" alt=""></button>`:'';
+let html='';
+items.forEach(it=>{
+  const id=it.n?'n'+it.n:'p'+Math.random().toString(36).slice(2,7);it.id=id;
+  if(it.kind==='fixed'){const w=it.w;const crops=(w.before_crop||w.after_crop)?`<div class="pair" hidden>${shot(w.before_crop)}<span class="ar">→</span>${shot(w.after_crop)}</div>`:'';
+    html+=`<li class="note" id="${id}" data-kind="fixed"${it.n?` data-n="${it.n}"`:''}>
+      <button class="nhead" aria-expanded="false"${crops?'':' disabled'}><span class="num${it.n?'':' none'}">${it.n||'·'}</span><span class="nname">${esc(w.name)}${w.note?`<small>${esc(w.note)}</small>`:''}</span>${crops?'<span class="caret">▸</span>':'<span class="mk ok">✓</span>'}</button>
+      ${fixLines(w.fixes)}<div class="ruletext" hidden></div>${crops}</li>`;}
+  else{const l=it.l;
+    html+=`<li class="note" id="${id}" data-kind="still"${it.n?` data-n="${it.n}"`:''}>
+      <button class="nhead" aria-expanded="false"${l.image?'':' disabled'}><span class="num still${it.n?'':' none'}">${it.n||'◯'}</span><span class="nname">${esc(l.what)}</span>${l.image?'<span class="caret">▸</span>':''}</button>
+      <ul class="fx"><li><span class="was">Still there.</span> ${esc(l.note)}${ruleBtn(l.rule)}</li></ul><div class="ruletext" hidden></div>${l.image?`<div class="single" hidden>${shot(l.image)}</div>`:''}</li>`;}
+});
+if(removed.length){html+=`<li class="group" data-kind="removed">Removed</li>`;
+  removed.forEach((w,i)=>{html+=`<li class="note" id="r${i}" data-kind="removed">
+    <div class="nhead"><span class="num none">✕</span><span class="nname">${esc(w.name)}</span><span></span></div>
+    <div class="rm">${w.before_crop?`<button class="struck" data-src="${esc(w.before_crop)}" aria-label="Enlarge ${esc(w.name)}"><img loading="lazy" src="${esc(w.before_crop)}" alt=""></button>`:''}</div>
+    ${w.why?`<p class="why">${esc(w.why)}</p>`:''}${fixLines(w.fixes)}<div class="ruletext" hidden></div></li>`;});}
+notes.innerHTML=html;
+
+/* pins, outlines, rings */
+const pct=v=>(v*100).toFixed(2)+'%';
+items.filter(it=>it.n).forEach(it=>{
+  const bx=boxes(it.w?it.w.box:it.l.box);
+  if(it.kind==='fixed'){const [x,y,w,h]=bx[0];screen.insertAdjacentHTML('beforeend',`<div class="ob" data-n="${it.n}" style="left:${pct(x)};top:${pct(y)};width:${pct(w)};height:${pct(h)}"></div>`)}
+  else bx.forEach(([x,y,w,h])=>screen.insertAdjacentHTML('beforeend',`<svg class="ring" data-n="${it.n}" style="left:${pct(x-.006)};top:${pct(y-.008)};width:${pct(w+.012)};height:${pct(h+.016)}" viewBox="0 0 200 100" preserveAspectRatio="none" aria-hidden="true"><path d="${RING}"/></svg>`));
+  const [x,y,w]=bx[0];const px=it.kind==='still'?x+w:x;
+  screen.insertAdjacentHTML('beforeend',`<button class="pin${it.kind==='still'?' still':''}" data-n="${it.n}" style="left:${pct(px)};top:${pct(y)}" aria-label="Go to note ${it.n}">${it.n}</button>`);
+});
+
+/* linking */
+const leader=$('#leader'),line=$('#lline'),marked=$('#marked');
+let active=null;
+const wide=()=>matchMedia('(min-width:901px)').matches;
+function draw(){
+  if(!active||!wide()){line.setAttribute('hidden','');return}
+  const pin=$(`.pin[data-n="${active}"]`),note=$(`#n${active} .num`);if(!pin||!note){line.setAttribute('hidden','');return}
+  const m=marked.getBoundingClientRect(),p=pin.getBoundingClientRect(),q=note.getBoundingClientRect();
+  if(q.bottom<0||q.top>innerHeight||p.bottom<0||p.top>innerHeight){line.setAttribute('hidden','');return}
+  line.setAttribute('x1',p.right-m.left);line.setAttribute('y1',p.top+p.height/2-m.top);
+  line.setAttribute('x2',q.left-m.left-6);line.setAttribute('y2',q.top+q.height/2-m.top);line.removeAttribute('hidden');
+}
+function light(nv){
+  active=nv;
+  $$('.pin,.ob,.note').forEach(e=>e.classList.toggle('on',!!nv&&(e.dataset.n===String(nv))));
+  draw();
+}
+addEventListener('scroll',()=>{if(active)draw()},{passive:true});addEventListener('resize',draw);
+$$('.note[data-n]').forEach(el=>{el.addEventListener('mouseenter',()=>light(el.dataset.n));el.addEventListener('mouseleave',()=>light(null));el.addEventListener('focusin',()=>light(el.dataset.n))});
+$$('.pin').forEach(p=>{
+  p.addEventListener('mouseenter',()=>light(p.dataset.n));p.addEventListener('mouseleave',()=>light(null));
+  p.onclick=()=>{const t=$('#n'+p.dataset.n);if(!t)return;t.scrollIntoView({behavior:'smooth',block:wide()?'nearest':'center'});light(p.dataset.n);t.querySelector('.nhead').focus({preventScroll:true})};
+});
+
+/* expand, rule text, zoom on crops */
+notes.addEventListener('click',e=>{
+  const s=e.target.closest('.shot,.struck');if(s){openZoom(s.dataset.src);return}
+  const r=e.target.closest('.rule');
+  if(r){const box=r.closest('.note').querySelector('.ruletext');const id=r.dataset.rule;const on=r.getAttribute('aria-expanded')!=='true';
+    r.closest('.note').querySelectorAll('.rule').forEach(x=>x.setAttribute('aria-expanded','false'));
+    if(on){box.innerHTML=`<span class="mono">${esc(id)}</span> · ${esc(TEAM[id]||NAMES[id]||'Not in the slop list or team-rules.md')}`;box.hidden=false;r.setAttribute('aria-expanded','true')}else box.hidden=true;
+    requestAnimationFrame(draw);return}
+  const h=e.target.closest('button.nhead');
+  if(h&&!h.disabled){const on=h.getAttribute('aria-expanded')!=='true';h.setAttribute('aria-expanded',String(on));const c=h.closest('.note').querySelector('.pair,.single');if(c)c.hidden=!on;requestAnimationFrame(draw)}
+});
+
+/* breaks */
+const order={breaks:0,ugly:1,holds:2};
+const tried=B.filter(b=>b.result!=='not tried').sort((a,b)=>(order[a.result]??3)-(order[b.result]??3));
+const mark=r=>r==='breaks'?`<span class="mk bad">${ringSvg()}✕</span>`:r==='ugly'?'<span class="mk ug">⚠&#xFE0E;</span>':'<span class="mk ok">✓</span>';
+$('#brk').innerHTML=tried.map(b=>`<li data-r="${esc(b.result)}"><button class="brow" data-src="${esc(b.image||'')}"${b.image?'':' disabled'} aria-label="${esc(b.case)}: ${esc(b.result)}">${mark(b.result)}<span class="case">${esc(b.case)}</span><span class="bn">${esc(b.note)}</span>${b.image?`<img loading="lazy" src="${esc(b.image)}" alt="">`:'<span></span>'}</button></li>`).join('');
+$('#brk').onclick=e=>{const b=e.target.closest('.brow');if(b&&b.dataset.src)openZoom(b.dataset.src)};
+$('#brkAside').innerHTML=[R.breaks.length?`<span class="bad">✕ ${R.breaks.length}</span>`:'',R.ugly.length?`<span class="ug">⚠&#xFE0E; ${R.ugly.length}</span>`:'',R.holds.length?`<span class="ok">✓ ${R.holds.length}</span>`:'',R.not.length?`${R.not.length} not tried`:''].filter(Boolean).join(' · ');
+if(R.not.length){$('#nottried').hidden=false;$('#nottried').textContent='Not tried: '+R.not.map(b=>b.case+(b.note?` (${b.note})`:'')).join(' · ')}
+if(!B.length)$('#s-breaks').hidden=true;
+
+/* rules */
+const RA=D.rules_added||[];
+$('#rules').innerHTML=RA.map(r=>`<li><span class="mk ok">✓</span><span>${esc(r)}</span></li>`).join('');
+$('#rulesAside').textContent=RA.length?String(RA.length):'';
+const file=D.rules_file||'team-rules.md';
+if(!RA.length){$('#s-rules').hidden=true}
+else if(D.rules_saved){$('#save').innerHTML=`<span class="ok">✓</span> ${D.rules_created?'Created':'Saved to'} <span class="mono">${esc(file)}</span>${D.rules_created?' and saved them':''}`}
+else{$('#save').innerHTML=`<button class="btn" id="copy">Copy rules</button><span>Not saved. Add them to <span class="mono">${esc(file)}</span>.</span>`;
+  $('#copy').onclick=()=>{const t=RA.map(r=>'- '+r).join('\n');const done=()=>{$('#copy').textContent='Copied ✓'};
+    const sel=()=>{const rg=document.createRange();rg.selectNodeContents($('#rules'));const s=getSelection();s.removeAllRanges();s.addRange(rg);$('#copy').textContent='Selected, press Copy'};
+    try{navigator.clipboard.writeText(t).then(done,sel)}catch(e){sel()}};}
+
+/* filters */
+let filter=null;
+const NOTEF=['fixed','removed','still'],BRKF=['breaks','ugly','holds'];
+function applyFilter(){
+  $$('.count').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.f===filter)));
+  const nf=NOTEF.includes(filter)?filter:null,bf=BRKF.includes(filter)?filter:null;
+  $$('#notes > li').forEach(li=>li.hidden=!!nf&&li.dataset.kind!==nf);
+  $$('.pin,.ob,.ring').forEach(el=>{const it=items.find(i=>String(i.n)===el.dataset.n);el.classList.toggle('dim',!!nf&&(!it||it.kind!==nf))});
+  $$('#brk > li').forEach(li=>li.hidden=!!bf&&li.dataset.r!==bf);
+  draw();
+}
+$$('.count').forEach(b=>b.onclick=()=>{const was=filter===b.dataset.f;filter=was?null:b.dataset.f;applyFilter();
+  if(!was){const c=counts.find(c=>c.f===filter);const sec=$('#'+c.sec);if(sec&&sec.getBoundingClientRect().top>innerHeight*.6)sec.scrollIntoView({behavior:'smooth',block:'start'})}});
+})();
+</script>

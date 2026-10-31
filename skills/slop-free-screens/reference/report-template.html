@@ -1,0 +1,299 @@
+<title>Slop Report</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<!--
+  HOW TO FILL THIS REPORT
+  Edit only the JSON inside <script id="report-data">. The page draws itself from it.
+  Keep every key. Leave a value "" or [] when it doesn't apply.
+  The report grows across the run. Each step fills its own keys:
+    Step 1 Set the job      -> for
+    Step 4 Cut and break    -> before, after, widgets, left, breaks
+    Step 5 Make it a rule   -> rules_added, rules_saved
+  steps: "done" or "" for each of job, rules, pick, cut, rule.
+  Show, don't tell: every widget, leftover and break case gets a screenshot or crop. Text is a caption only:
+    fixes[].found and fixes[].replaced: 6 words or fewer each. why, note: 10 words or fewer.
+  widgets[].status: "kept" or "removed". A removed widget has a before_crop and a why, and no after_crop.
+  Rule ids: from slop-list.md (L3, W1, D2, B10) or from team-rules.md (add those to team_rules with their text).
+    Never list rules the skill already holds. rules_added holds only new rules from this run.
+  breaks[].result: "breaks", "ugly", "holds" or "not tried". A case checked only by reading code is "not tried".
+  rules_saved: true when step 5 wrote rules_added into rules_file; false shows a Copy button instead.
+  Images: a relative path (img/after.png) or a data: URI. Never write the text </script> inside the JSON.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: screens carry the report; text is captions. Before/after, then one row per widget, then leftovers and break tests as screenshot grids */
+:root{
+  --bg:#ffffff; --fg:#15181e; --muted:#5a6170; --line:#e2e5ea; --soft:#f4f6f8;
+  --accent:#1d5bd6; --on-accent:#ffffff;
+  --good:#17794a; --good-bg:#e6f3eb; --bad:#bd3328; --bad-bg:#fbe8e6; --warn:#8f5800; --warn-bg:#fbf0dc;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#111317; --fg:#e7e9ed; --muted:#9aa1ad; --line:#2a2e36; --soft:#191c21;
+  --accent:#6f9bf2; --on-accent:#0b1020;
+  --good:#62c08d; --good-bg:#14261c; --bad:#f0796d; --bad-bg:#2c1714; --warn:#e2a74c; --warn-bg:#2a2112;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111317; --fg:#e7e9ed; --muted:#9aa1ad; --line:#2a2e36; --soft:#191c21;
+  --accent:#6f9bf2; --on-accent:#0b1020;
+  --good:#62c08d; --good-bg:#14261c; --bad:#f0796d; --bad-bg:#2c1714; --warn:#e2a74c; --warn-bg:#2a2112;
+  color-scheme:dark}
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--sans)}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.page{max-width:1120px;margin:0 auto;padding-block:32px 72px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:48px;grid-template-columns:minmax(0,1fr)}
+section{display:grid;gap:16px;min-width:0}
+h1{font-size:28px;line-height:1.2;font-weight:600;margin:0;text-wrap:balance}
+h2{font-size:17px;font-weight:600;margin:0;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+h2 .count{font:500 13px var(--mono);color:var(--muted)}
+.eyebrow{font:500 12px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.meta{color:var(--muted);font-size:14px}
+header{display:grid;gap:8px}
+.for{margin:0;font-size:15px}
+.for b{font-weight:600}
+.steps{list-style:none;margin:4px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--muted)}
+.steps li{display:flex;align-items:center;gap:6px}
+.steps li::before{content:"";width:8px;height:8px;border-radius:50%;border:1.5px solid currentColor}
+.steps li.done{color:var(--fg)}
+.steps li.done::before{background:var(--good);border-color:var(--good)}
+.tally{display:flex;flex-wrap:wrap;gap:6px 20px;margin:6px 0 0;font-size:16px}
+.tally b{font:600 22px var(--sans);font-variant-numeric:tabular-nums;margin-right:6px}
+.tally .bad b{color:var(--bad)}
+.label{font:500 12px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.shot{display:block;width:100%;padding:0;border:1px solid var(--line);border-radius:6px;background:var(--soft);overflow:hidden;text-align:left}
+.shot img{display:block;width:100%;height:auto;max-height:var(--h,320px);object-fit:contain;object-position:top center}
+.shot.empty{padding:32px 12px;text-align:center;color:var(--muted);font-size:13px;cursor:default}
+.ba{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+.ba figure{margin:0;display:grid;gap:8px;min-width:0}
+.ba .shot{--h:640px}
+.widget{display:grid;gap:12px;padding-top:20px;border-top:1px solid var(--line);min-width:0}
+.widget-head{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.widget-head b{font-size:16px;font-weight:600}
+.widget-head .note{color:var(--muted);font-size:14px}
+.status{font:500 12px var(--mono);padding:2px 8px;border-radius:4px;background:var(--soft);color:var(--muted)}
+.status.removed{background:var(--warn-bg);color:var(--warn)}
+.pair{display:grid;grid-template-columns:minmax(0,1fr) 28px minmax(0,1fr);gap:8px;align-items:start}
+.pair .arrow{align-self:center;text-align:center;color:var(--muted);font-size:18px}
+.pair figure{margin:0;display:grid;gap:6px;min-width:0}
+.pair .shot img{width:auto;max-width:100%;margin-inline:auto}
+.why{margin:0;align-self:center;font-size:15px}
+.fixes{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:14px}
+.fixes li{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline}
+.fixes .was,.fixes .to{color:var(--muted)}
+.rtag{font:500 12px var(--mono);border:1px solid var(--line);background:var(--bg);border-radius:4px;padding:1px 6px;color:var(--muted)}
+.rtag[aria-expanded="true"]{border-color:var(--fg);color:var(--fg)}
+.rtext{flex-basis:100%;font-size:13px;color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--min,240px),1fr));gap:20px 16px}
+.card{display:grid;gap:8px;align-content:start;min-width:0}
+.card .shot{height:var(--ch,200px)}
+.card .shot img{height:100%;max-height:none}
+.card .title{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.card .title b{font-weight:600}
+.card p{margin:0;font-size:14px;color:var(--muted)}
+.left{--min:300px;--ch:220px}
+.breaks{--min:200px}
+.breaks .shot{height:auto;aspect-ratio:4/3}
+.breaks .shot img{width:100%;height:100%;object-fit:cover;object-position:left top}
+.pill{font:500 12px var(--mono);padding:2px 8px;border-radius:4px;white-space:nowrap}
+.pill.holds{color:var(--good);background:var(--good-bg)}
+.pill.breaks{color:var(--bad);background:var(--bad-bg)}
+.pill.ugly{color:var(--warn);background:var(--warn-bg)}
+.untried{margin:0;font-size:14px;color:var(--muted)}
+.untried b{color:var(--fg);font-weight:500}
+.none{margin:0;color:var(--muted);font-size:14px}
+.rules{margin:0;padding-left:20px;display:grid;gap:6px}
+.saved{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:14px;color:var(--muted)}
+.saved code{font-family:var(--mono);color:var(--fg)}
+.btn{background:var(--accent);color:var(--on-accent);border:0;border-radius:6px;padding:7px 14px;font-weight:500;font-size:14px}
+footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:14px}
+.zoom{position:fixed;inset:0;z-index:20;background:var(--bg);overflow:auto;padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) 32px max(16px,env(safe-area-inset-left,0px))}
+.zoom .bar{position:sticky;top:0;display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--bg);padding-block:8px 12px}
+.zoom img{display:block;max-width:100%;margin:0 auto;border:1px solid var(--line)}
+.zoom .close{border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:6px 12px}
+@media (max-width:720px){
+  h1{font-size:23px}
+  .ba{grid-template-columns:minmax(0,1fr)}
+  .ba .shot{--h:420px}
+  .pair{grid-template-columns:minmax(0,1fr)}
+  .pair .arrow{transform:rotate(90deg)}
+}
+</style>
+
+<div class="page" id="app"></div>
+<div class="zoom" id="zoom" hidden role="dialog" aria-modal="true" aria-label="Full-size screenshot">
+  <div class="bar"><b id="zoom-title"></b><button class="close" id="zoom-close" type="button">Close</button></div>
+  <img id="zoom-img" alt="">
+</div>
+
+<script type="application/json" id="report-data">
+{
+  "screen": "",
+  "date": "",
+  "tool": "",
+  "for": "",
+  "steps": { "job": "", "rules": "", "pick": "", "cut": "", "rule": "" },
+  "before": { "image": "" },
+  "after": { "image": "" },
+  "widgets": [
+    { "name": "", "status": "", "note": "", "before_crop": "", "after_crop": "", "why": "",
+      "fixes": [ { "found": "", "replaced": "", "rule": "" } ] }
+  ],
+  "left": [ { "what": "", "rule": "", "note": "", "image": "" } ],
+  "breaks": [ { "case": "", "result": "", "note": "", "image": "" } ],
+  "rules_added": [],
+  "rules_file": "team-rules.md",
+  "rules_saved": false,
+  "team_rules": [ { "id": "", "text": "" } ]
+}
+</script>
+
+<script>
+(function () {
+  var data;
+  try { data = JSON.parse(document.getElementById('report-data').textContent); }
+  catch (e) { document.getElementById('app').textContent = 'The report data could not be read: ' + e.message; return; }
+
+  // Short names of the slop list's signs, for the rule tags. Generated from slop-list.md.
+  var SLOP = /*SLOP-IDS*/{"L1": "Decoration colour", "L2": "One colour, two meanings", "L3": "A colour per item", "L4": "Gradients, glows, glass or blur", "L5": "The default AI look", "L6": "Everything in a box", "L7": "Flat type", "L8": "Random spacing", "L9": "One part drawn many ways", "L10": "The frame changes between screens", "L11": "Bare rows, or emoji as icons", "L12": "A pill on every row", "L13": "AI marks everywhere", "L14": "Ornaments instead of numbers", "L15": "Text too small for where it's read", "L16": "Low contrast", "L17": "Short values wrap or break mid-word", "L18": "Things overlap or get cut off", "L19": "Big empty areas", "L20": "Widgets shrink and leave holes", "W1": "A subtitle that repeats the heading", "W2": "Helper lines under controls", "W3": "The AI's own notes left on screen", "W4": "Instructions inside an empty state", "W5": "Keyboard-hint strips, key labels (↵, Esc, 1 2 3) and legends", "W6": "System words on buttons", "W7": "Template leftovers", "W8": "The same fact twice or more", "W9": "\"Updated by…\" sentences, or the same label on every row", "W10": "Sentences where a number would do", "W11": "A generic heading that fits any product", "W12": "Copy that promises what the app doesn't do", "W13": "The header names the wrong task", "D1": "Numbers nobody acts on", "D2": "Comparisons with other people, or made-up targets", "D3": "Numbers that don't add up", "D4": "Numbers typed in rather than worked out", "D5": "A change or average with nothing to compare", "D6": "A missing value filled with a made-up one", "D7": "Colour by direction rather than meaning", "D8": "A chart that compares nothing", "D9": "Counts typed into links", "D10": "Dates that don't fit the moment", "D11": "The wrong local formats", "D12": "Sample data that's too neat", "D13": "The default AI sample people", "D14": "A number dropped or swapped without saying so", "B1": "Controls that do nothing", "B2": "Enter acts on the wrong item", "B3": "One key press handled twice", "B4": "Letter shortcuts on a screen where people type", "B5": "The selection jumps after an action", "B6": "Two different states look the same", "B7": "No undo, or an undo that leaves a junk row", "B8": "Happy path only", "B9": "An empty state that pretends there's data", "B10": "The main action is buried", "B11": "The most urgent items aren't first", "B12": "One screen serving several roles", "B13": "The right-looking pattern for the wrong job", "B14": "A choice doesn't carry to the next screen", "B15": "Undoing a choice doesn't reset what depends on it", "B16": "Lists only fit the amount drawn", "B17": "Sideways scroll at phone width", "B18": "No visible focus, or parts you can't reach by keyboard", "B19": "Widgets deleted to \"remove slop\"", "B20": "The AI says it checked something it didn't", "B21": "A script error when the page loads"}/*END*/;
+  var STEPS = [['job', 'Set the job'], ['rules', 'Set the rules'], ['pick', 'Pick and check'], ['cut', 'Cut and break'], ['rule', 'Make it a rule']];
+  var steps = data.steps || {};
+  var ran = function (k) { return steps[k] === 'done'; };
+  var filled = function (arr) { return (arr || []).filter(function (o) { return o && Object.keys(o).some(function (k) { var v = o[k]; return Array.isArray(v) ? v.length : !!v; }); }); };
+  var teamRules = {}; filled(data.team_rules).forEach(function (r) { teamRules[r.id] = r.text; });
+
+  function el(tag, attrs, kids) {
+    var n = document.createElement(tag);
+    for (var k in (attrs || {})) {
+      var v = attrs[k];
+      if (v === null || v === undefined || v === false) continue;
+      if (k === 'text') n.textContent = v;
+      else if (k === 'class') n.className = v;
+      else if (k.slice(0, 2) === 'on') n.addEventListener(k.slice(2), v);
+      else n.setAttribute(k, v);
+    }
+    [].concat(kids || []).forEach(function (c) { if (c) n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+    return n;
+  }
+  function section(title, count, body) {
+    return el('section', {}, [el('h2', {}, [title, count ? el('span', { class: 'count', text: String(count) }) : null])].concat(body));
+  }
+  function notRun(stepKey, emptyText) { return el('p', { class: 'none', text: ran(stepKey) ? (emptyText || 'None') : 'Not run yet' }); }
+  function shot(src, label) {
+    if (!src) return el('div', { class: 'shot empty', text: 'No screenshot' });
+    return el('button', { class: 'shot', type: 'button', 'aria-label': 'Open full size: ' + label, onclick: function () { zoom(src, label); } },
+      [el('img', { src: src, alt: label, loading: 'lazy' })]);
+  }
+  // A rule tag: hover shows the rule's name; a tap or click shows it inline
+  function ruleTag(id, holder) {
+    if (!id) return null;
+    var text = teamRules[id] || SLOP[id] || '';
+    if (!text) return el('span', { class: 'rtag', text: id });
+    var note = el('span', { class: 'rtext', hidden: '', text: id + ' · ' + text });
+    var b = el('button', { class: 'rtag', type: 'button', title: text, 'aria-expanded': 'false', text: id, onclick: function () {
+      var open = b.getAttribute('aria-expanded') === 'true';
+      b.setAttribute('aria-expanded', open ? 'false' : 'true'); note.hidden = open;
+    } });
+    holder.push(note);
+    return b;
+  }
+
+  var app = document.getElementById('app');
+  var widgets = filled(data.widgets), left = filled(data.left), breaks = filled(data.breaks);
+  var fixCount = widgets.reduce(function (n, w) { return n + filled(w.fixes).length; }, 0);
+  var removedCount = widgets.filter(function (w) { return w.status === 'removed'; }).length;
+  var breakCount = breaks.filter(function (b) { return (b.result || '').toLowerCase() === 'breaks'; }).length;
+  if (data.screen) document.title = data.screen + ' · Slop Report';
+
+  // Header
+  var tally = ran('cut') ? el('div', { class: 'tally' }, [
+    el('span', {}, [el('b', { text: String(fixCount) }), fixCount === 1 ? 'fix' : 'fixes']),
+    el('span', {}, [el('b', { text: String(removedCount) }), 'removed']),
+    el('span', {}, [el('b', { text: String(left.length) }), 'still there']),
+    el('span', { class: breakCount ? 'bad' : '' }, [el('b', { text: String(breakCount) }), breakCount === 1 ? 'break' : 'breaks'])
+  ]) : null;
+  app.appendChild(el('header', {}, [
+    el('div', { class: 'eyebrow', text: 'Slop-free screens report' }),
+    el('h1', { text: data.screen || 'Untitled screen' }),
+    el('div', { class: 'meta', text: [data.date, data.tool].filter(Boolean).join(' · ') }),
+    data.for ? el('p', { class: 'for' }, [el('b', { text: 'For: ' }), data.for]) : null,
+    el('ol', { class: 'steps', 'aria-label': 'Steps run' }, STEPS.map(function (s) { return el('li', { class: ran(s[0]) ? 'done' : '', text: s[1] }); })),
+    tally
+  ]));
+
+  // Before and after
+  app.appendChild(section('Before and after', '', [el('div', { class: 'ba' }, [
+    el('figure', {}, [el('div', { class: 'label', text: 'Before' }), shot((data.before || {}).image, 'Before')]),
+    el('figure', {}, [el('div', { class: 'label', text: 'After' }), shot((data.after || {}).image, 'After')])
+  ])]));
+
+  // What changed, one row per widget
+  var arrow = function () { return el('span', { class: 'arrow', 'aria-hidden': 'true', text: '→' }); };
+  var rows = widgets.map(function (w) {
+    var removed = w.status === 'removed';
+    var head = el('div', { class: 'widget-head' }, [el('b', { text: w.name }), w.status ? el('span', { class: 'status' + (removed ? ' removed' : ''), text: removed ? 'Removed' : 'Kept' }) : null, w.note ? el('span', { class: 'note', text: w.note }) : null]);
+    var visual = null;
+    if (removed) visual = el('div', { class: 'pair' }, [el('figure', {}, [shot(w.before_crop, w.name + ', before')]), arrow(), el('p', { class: 'why', text: w.why || '' })]);
+    else if (w.before_crop || w.after_crop) visual = el('div', { class: 'pair' }, [el('figure', {}, [shot(w.before_crop, w.name + ', before')]), arrow(), el('figure', {}, [shot(w.after_crop, w.name + ', after')])]);
+    var fixes = filled(w.fixes);
+    var list = fixes.length ? el('ul', { class: 'fixes' }, fixes.map(function (f) {
+      var hold = [];
+      var tag = ruleTag(f.rule, hold);
+      return el('li', {}, [el('span', { class: 'was', text: f.found }), el('span', { class: 'to', text: '→' }), el('span', { text: f.replaced }), tag].concat(hold));
+    })) : null;
+    return el('div', { class: 'widget' }, [head, visual, list]);
+  });
+  app.appendChild(section('What changed', '', rows.length ? rows : [notRun('cut')]));
+
+  // Still there: slop found but not fixed, shown where it is
+  app.appendChild(section('Still there', left.length, [left.length ? el('div', { class: 'grid left' }, left.map(function (l) {
+    var hold = [];
+    return el('div', { class: 'card' }, [shot(l.image, l.what), el('div', { class: 'title' }, [el('b', { text: l.what }), ruleTag(l.rule, hold)].concat(hold)), l.note ? el('p', { text: l.note }) : null]);
+  })) : notRun('cut', 'Nothing left')]));
+
+  // Try to break it: problems first; cases that weren't tried go in one line at the end
+  var ORDER = ['breaks', 'ugly', 'holds'];
+  var res = function (b) { return (b.result || 'not tried').toLowerCase(); };
+  var tried = breaks.filter(function (b) { return ORDER.indexOf(res(b)) > -1; })
+    .map(function (b, i) { return [b, i]; }).sort(function (x, y) { return ORDER.indexOf(res(x[0])) - ORDER.indexOf(res(y[0])) || x[1] - y[1]; }).map(function (x) { return x[0]; });
+  var untried = breaks.filter(function (b) { return ORDER.indexOf(res(b)) < 0; });
+  var counts = ORDER.map(function (k) { var n = tried.filter(function (b) { return res(b) === k; }).length; return n ? k.charAt(0).toUpperCase() + k.slice(1) + ' ' + n : ''; }).filter(Boolean).join(' · ');
+  var breakBody = [];
+  if (tried.length) breakBody.push(el('div', { class: 'grid breaks' }, tried.map(function (b) {
+    var r = res(b);
+    return el('div', { class: 'card' }, [shot(b.image, b.case), el('div', { class: 'title' }, [el('b', { text: b.case }), el('span', { class: 'pill ' + r, text: r.charAt(0).toUpperCase() + r.slice(1) })]), b.note ? el('p', { text: b.note }) : null]);
+  })));
+  if (untried.length) breakBody.push(el('p', { class: 'untried' }, [el('b', { text: 'Not tried: ' }), untried.map(function (b) { return b.case + (b.note ? ' (' + b.note + ')' : ''); }).join(' · ')]));
+  app.appendChild(section('Try to break it', counts, breakBody.length ? breakBody : [notRun('cut')]));
+
+  // New rules from this run
+  var added = (data.rules_added || []).filter(Boolean);
+  var file = data.rules_file || 'team-rules.md';
+  var rulesBody = [];
+  if (added.length) {
+    var list = el('ol', { class: 'rules' }, added.map(function (r) { return el('li', { text: r }); }));
+    rulesBody.push(list);
+    if (data.rules_saved) rulesBody.push(el('div', { class: 'saved' }, ['Saved to ', el('code', { text: file })]));
+    else {
+      var status = el('span', { role: 'status' });
+      var text = added.map(function (r) { return '- ' + r; }).join('\n');
+      rulesBody.push(el('div', { class: 'saved' }, [el('button', { class: 'btn', type: 'button', text: 'Copy rules', onclick: function () {
+        var fallback = function () { var rg = document.createRange(); rg.selectNodeContents(list); var s = getSelection(); s.removeAllRanges(); s.addRange(rg); status.textContent = 'Selected. Press Ctrl+C or Cmd+C.'; };
+        try { navigator.clipboard.writeText(text).then(function () { status.textContent = 'Copied'; }, fallback); } catch (e) { fallback(); }
+      } }), el('span', {}, ['Not saved. Add them to ', el('code', { text: file }), '.']), status]));
+    }
+  }
+  app.appendChild(section('New rules', added.length, rulesBody.length ? rulesBody : [notRun('rule', 'No new rules')]));
+
+  app.appendChild(el('footer', { text: 'Made with slop-free-screens · MIT licence' }));
+
+  // Full-size view
+  var z = document.getElementById('zoom'), zi = document.getElementById('zoom-img'), zt = document.getElementById('zoom-title'), last = null;
+  function zoom(src, title) { last = document.activeElement; zi.src = src; zi.alt = title; zt.textContent = title; z.hidden = false; document.getElementById('zoom-close').focus(); }
+  function unzoom() { z.hidden = true; zi.removeAttribute('src'); if (last) last.focus(); }
+  document.getElementById('zoom-close').addEventListener('click', unzoom);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !z.hidden) unzoom(); });
+})();
+</script>
